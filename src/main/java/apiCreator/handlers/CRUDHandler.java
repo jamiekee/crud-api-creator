@@ -10,9 +10,12 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.MissingResourceException;
 
+import static apiCreator.constants.LoggingConstants.*;
+import static apiCreator.constants.HandlerConstants.*;
+import static apiCreator.logging.APICreatorLogging.*;
+import static apiCreator.utils.StringFormatter.fs;
 import static com.mongodb.client.model.Filters.eq;
 import static com.mongodb.client.model.Updates.set;
-import static apiCreator.logging.APICreator.logger;
 import static apiCreator.routes.JSONTransformer.fromJSON;
 
 public class CRUDHandler {
@@ -24,7 +27,7 @@ public class CRUDHandler {
     }
 
     public Resource getResource(String id) {
-        logger.info("[" + id + "] Getting " + resource.getSimpleName());
+        logger.info(fs("[", id, "] Getting ", resource.getSimpleName()));
         Document doc = collection.find(eq(ID_FIELD, id)).first();
         if (doc == null)
             throw new MissingResourceException(
@@ -36,6 +39,7 @@ public class CRUDHandler {
     }
 
     public Resource createResource(Resource newResource) {
+        logger.info(fs("Creating new ", this.resource.getSimpleName()));
         ObjectId objId = new ObjectId();
         Document newDoc = toDocument(newResource, objId);
         collection.insertOne(newDoc);
@@ -43,11 +47,13 @@ public class CRUDHandler {
     }
 
     public boolean deleteResource(String id) {
+        logger.info(fs("[", id, "] Deleting ", resource.getSimpleName()));
         getResource(id);
         return (collection.deleteOne(eq(ID_FIELD, id)).getDeletedCount() == 1);
     }
 
     public Resource updateField(Field field, Object newValue, String id) {
+        logger.info(fs("[", id, "] Updating field ", field.getName(), " in ", resource.getSimpleName()));
         if (!field.isUpdatable())
             //TODO: Make custom exception
             throw new UnsupportedOperationException();
@@ -56,19 +62,21 @@ public class CRUDHandler {
     }
 
     private Resource toResource(Document doc, String id) {
+        logger.debug(fs("[", id, "] Converting to ", resource.getSimpleName()));
         Resource res = (Resource) fromJSON(doc.toJson(), resource);
         res.setID(id);
         return res;
     }
 
     private Document toDocument(Resource resource, ObjectId objID) {
+        logger.debug(fs("[", objID.toString(), "] Converting ", this.resource.getSimpleName(), " to Document"));
         Document doc = new Document();
         for (Field field : fields) {
             Object fieldValue = getValueForField(resource, field);
             if (fieldValue == null && field.isRequired())
                 //TODO: Make custom exception
                 throw new MissingResourceException(
-                        "Missing field in resource: " + field.getName(),
+                        fs("Missing field in resource: ", field.getName()),
                         resource.getClass().getSimpleName(),
                         field.getName()
                 );
@@ -81,7 +89,7 @@ public class CRUDHandler {
     private Object getValueForField(Resource resource, Field field) {
         Object toReturn = null;
         try {
-            Method method = resource.getClass().getMethod(GET + format(field.getName()));
+            Method method = resource.getClass().getMethod(fs(GET_METHOD, format(field.getName())));
             toReturn = method.invoke(resource);
         } catch (NoSuchMethodException e) {
             e.printStackTrace();
@@ -94,14 +102,10 @@ public class CRUDHandler {
     }
 
     private String format(String name) {
-        return name.substring(0, 1).toUpperCase() + name.substring(1).toLowerCase();
+        return fs(name.substring(0, 1).toUpperCase(), name.substring(1).toLowerCase());
     }
 
     private MongoCollection<Document> collection;
     private Class resource;
     private Field[] fields;
-
-    private final String ID_FIELD = "_id";
-    private final String GET = "get";
-
 }
